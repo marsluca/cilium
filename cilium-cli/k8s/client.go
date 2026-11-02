@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"slices"
@@ -185,8 +184,17 @@ func (c *Client) GetAPIServerHostAndPort() (string, string) {
 		if addr != "" {
 			url, err := url.Parse(addr)
 			if err == nil {
-				host, port, _ := net.SplitHostPort(url.Host)
-				return host, port
+				port := url.Port()
+				if port == "" {
+					// The server URL may omit the default port, as in EKS kubeconfigs.
+					switch url.Scheme {
+					case "https":
+						port = "443"
+					case "http":
+						port = "80"
+					}
+				}
+				return url.Hostname(), port
 			}
 		}
 	}

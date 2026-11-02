@@ -179,3 +179,75 @@ func TestIsTransientExecError(t *testing.T) {
 		})
 	}
 }
+
+func TestGetAPIServerHostAndPort(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		server string
+		host   string
+		port   string
+	}{
+		{
+			name:   "explicit port",
+			server: "https://api.example.test:6443",
+			host:   "api.example.test",
+			port:   "6443",
+		},
+		{
+			name:   "https without port",
+			server: "https://ABCDEF1234567890.gr7.us-west-2.eks.amazonaws.com",
+			host:   "ABCDEF1234567890.gr7.us-west-2.eks.amazonaws.com",
+			port:   "443",
+		},
+		{
+			name:   "http without port",
+			server: "http://api.example.test",
+			host:   "api.example.test",
+			port:   "80",
+		},
+		{
+			name:   "path is ignored",
+			server: "https://api.example.test/k8s/clusters/c-1",
+			host:   "api.example.test",
+			port:   "443",
+		},
+		{
+			name:   "ipv6 with port",
+			server: "https://[2001:db8::1]:6443",
+			host:   "2001:db8::1",
+			port:   "6443",
+		},
+		{
+			name:   "ipv6 without port",
+			server: "https://[2001:db8::1]",
+			host:   "2001:db8::1",
+			port:   "443",
+		},
+		{
+			name:   "no scheme",
+			server: "api.example.test:6443",
+		},
+		{
+			name:   "empty",
+			server: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Client{
+				RawConfig: clientcmdapi.Config{
+					Contexts: map[string]*clientcmdapi.Context{
+						"test": {Cluster: "test"},
+					},
+					Clusters: map[string]*clientcmdapi.Cluster{
+						"test": {Server: tc.server},
+					},
+					CurrentContext: "test",
+				},
+				contextName: "test",
+			}
+			host, port := c.GetAPIServerHostAndPort()
+			assert.Equal(t, tc.host, host)
+			assert.Equal(t, tc.port, port)
+		})
+	}
+}
