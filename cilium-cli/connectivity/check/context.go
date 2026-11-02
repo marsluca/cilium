@@ -986,24 +986,36 @@ func (ct *ConnectivityTest) initClients(ctx context.Context) error {
 // errNoCiliumPods is returned by initCiliumPods when a cluster runs no Cilium
 // agent, so that callers which tolerate this can tell it apart from a failure
 // to reach the Kubernetes API.
-var errNoCiliumPods = errors.New("no cilium agent pods found")
+var errNoCiliumPods = errors.New("no running cilium agent pods found")
 
-// initCiliumPods fetches the Cilium agent pod information from all clients
+// initCiliumPods fetches the Cilium agent pod information from all clients.
+// Pods that are not running or are being deleted, for example on nodes that are
+// joining or leaving the cluster, are skipped as the tests cannot exec into them.
 func (ct *ConnectivityTest) initCiliumPods(ctx context.Context) error {
 	for _, client := range ct.clients.clients() {
 		ciliumPods, err := client.ListPods(ctx, ct.params.CiliumNamespace, metav1.ListOptions{LabelSelector: ct.params.AgentPodSelector})
 		if err != nil {
 			return fmt.Errorf("unable to list Cilium pods: %w", err)
 		}
-		if len(ciliumPods.Items) == 0 {
-			return fmt.Errorf("%w in -n %s -l %s", errNoCiliumPods, ct.params.CiliumNamespace, ct.params.AgentPodSelector)
-		}
+		running := 0
 		for _, ciliumPod := range ciliumPods.Items {
+			if ciliumPod.DeletionTimestamp != nil {
+				ct.Warnf("Skipping Cilium pod %s: terminating", ciliumPod.Name)
+				continue
+			}
+			if ciliumPod.Status.Phase != corev1.PodRunning {
+				ct.Warnf("Skipping Cilium pod %s: %s", ciliumPod.Name, ciliumPod.Status.Phase)
+				continue
+			}
 			// TODO: Can Cilium pod names collide across clusters?
 			ct.ciliumPods[ciliumPod.Name] = Pod{
 				K8sClient: client,
 				Pod:       ciliumPod.DeepCopy(),
 			}
+			running++
+		}
+		if running == 0 {
+			return fmt.Errorf("%w in -n %s -l %s", errNoCiliumPods, ct.params.CiliumNamespace, ct.params.AgentPodSelector)
 		}
 	}
 
